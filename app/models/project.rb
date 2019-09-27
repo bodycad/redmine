@@ -324,7 +324,6 @@ class Project < ActiveRecord::Base
     @shared_versions = nil
     @rolled_up_versions = nil
     @rolled_up_trackers = nil
-    @rolled_up_custom_fields = nil
     @all_issue_custom_fields = nil
     @all_time_entry_custom_fields = nil
     @to_param = nil
@@ -349,10 +348,6 @@ class Project < ActiveRecord::Base
 
   def active?
     self.status == STATUS_ACTIVE
-  end
-
-  def closed?
-    self.status == STATUS_CLOSED
   end
 
   def archived?
@@ -382,12 +377,8 @@ class Project < ActiveRecord::Base
   # Unarchives the project
   # All its ancestors must be active
   def unarchive
-    return false if ancestors.detect {|a| a.archived?}
-    new_status = STATUS_ACTIVE
-    if parent
-      new_status = parent.status
-    end
-    update_attribute :status, new_status
+    return false if ancestors.detect {|a| !a.active?}
+    update_attribute :status, STATUS_ACTIVE
   end
 
   def close
@@ -570,22 +561,6 @@ class Project < ActiveRecord::Base
         where("is_for_all = ? OR id IN (SELECT DISTINCT cfp.custom_field_id" +
           " FROM #{table_name_prefix}custom_fields_projects#{table_name_suffix} cfp" +
           " WHERE cfp.project_id = ?)", true, id)
-    end
-  end
-
-  # Returns a scope of all custom fields enabled for issues of the project
-  # and its subprojects
-  def rolled_up_custom_fields
-    if leaf?
-      all_issue_custom_fields
-    else
-      @rolled_up_custom_fields ||= IssueCustomField.
-        sorted.
-        where("is_for_all = ? OR EXISTS (SELECT 1" +
-          " FROM #{table_name_prefix}custom_fields_projects#{table_name_suffix} cfp" +
-          " JOIN #{Project.table_name} p ON p.id = cfp.project_id" +
-          " WHERE cfp.custom_field_id = #{CustomField.table_name}.id" +
-          " AND p.lft >= ? AND p.rgt <= ?)", true, lft, rgt)
     end
   end
 

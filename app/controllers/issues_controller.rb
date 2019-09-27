@@ -111,11 +111,6 @@ class IssuesController < ApplicationController
     @time_entry = TimeEntry.new(:issue => @issue, :project => @issue.project)
     @relation = IssueRelation.new
 
-    if User.current.allowed_to?(:view_time_entries, @project)
-      Issue.load_visible_spent_hours([@issue])
-      Issue.load_visible_total_spent_hours([@issue])
-    end
-
     respond_to do |format|
       format.html {
         retrieve_previous_and_next_issue_ids
@@ -330,28 +325,21 @@ class IssuesController < ApplicationController
 
   def destroy
     raise Unauthorized unless @issues.all?(&:deletable?)
-
-    # all issues and their descendants are about to be deleted
-    issues_and_descendants_ids = Issue.self_and_descendants(@issues).pluck(:id)
-    time_entries = TimeEntry.where(:issue_id => issues_and_descendants_ids)
-    @hours = time_entries.sum(:hours).to_f
-
+    @hours = TimeEntry.where(:issue_id => @issues.map(&:id)).sum(:hours).to_f
     if @hours > 0
       case params[:todo]
       when 'destroy'
         # nothing to do
       when 'nullify'
-        time_entries.update_all(:issue_id => nil)
+        TimeEntry.where(['issue_id IN (?)', @issues]).update_all('issue_id = NULL')
       when 'reassign'
-        reassign_to = @project && @project.issues.find_by_id(params[:reassign_to_id])
+        reassign_to = @project.issues.find_by_id(params[:reassign_to_id])
         if reassign_to.nil?
           flash.now[:error] = l(:error_issue_not_found_in_project)
           return
-        elsif issues_and_descendants_ids.include?(reassign_to.id)
-          flash.now[:error] = l(:error_cannot_reassign_time_entries_to_an_issue_about_to_be_deleted)
-          return
         else
-          time_entries.update_all(:issue_id => reassign_to.id, :project_id => reassign_to.project_id)
+          TimeEntry.where(['issue_id IN (?)', @issues]).
+            update_all("issue_id = #{reassign_to.id}")
         end
       else
         # display the destroy form if it's a user request

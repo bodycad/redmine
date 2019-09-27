@@ -176,10 +176,10 @@ class IssueRelation < ActiveRecord::Base
     set_issue_to_dates
   end
 
-  def set_issue_to_dates(journal=nil)
+  def set_issue_to_dates
     soonest_start = self.successor_soonest_start
     if soonest_start && issue_to
-      issue_to.reschedule_on!(soonest_start, journal)
+      issue_to.reschedule_on!(soonest_start)
     end
   end
 
@@ -204,19 +204,13 @@ class IssueRelation < ActiveRecord::Base
 
   # Reverses the relation if needed so that it gets stored in the proper way
   # Should not be reversed before validation so that it can be displayed back
-  # as entered on new relation form.
-  #
-  # Orders relates relations by ID, so that uniqueness index in DB is triggered
-  # on concurrent access.
+  # as entered on new relation form
   def reverse_if_needed
     if TYPES.has_key?(relation_type) && TYPES[relation_type][:reverse]
       issue_tmp = issue_to
       self.issue_to = issue_from
       self.issue_from = issue_tmp
       self.relation_type = TYPES[relation_type][:reverse]
-
-    elsif relation_type == TYPE_RELATES && issue_from_id > issue_to_id
-      self.issue_to, self.issue_from = issue_from, issue_to
     end
   end
 
@@ -231,8 +225,6 @@ class IssueRelation < ActiveRecord::Base
       issue_from.blocks? issue_to
     when 'blocks'
       issue_to.blocks? issue_from
-    when 'relates'
-      self.class.where(issue_from_id: issue_to, issue_to_id: issue_from).present?
     else
       false
     end

@@ -21,11 +21,10 @@
 </p>
 <%= hidden_field_tag 'tracker[core_fields][]', '' %>
 
-<% @issue_custom_fields = IssueCustomField.sorted %>
-<% if @issue_custom_fields.present? %>
+<% if IssueCustomField.all.any? %>
 <p>
   <label><%= l(:label_custom_field_plural) %></label>
-  <% @issue_custom_fields.each do |field| %>
+  <% IssueCustomField.all.each do |field| %>
     <label class="block">
       <%= check_box_tag 'tracker[custom_field_ids][]',field.id, @tracker.custom_fields.to_a.include?(field), :id => nil %>
       <%= field.name %>

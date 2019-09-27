@@ -176,8 +176,7 @@ module ApplicationHelper
     end
     case object.class.name
     when 'Array'
-      formatted_objects = object.map {|o| format_object(o, html)}
-      html ? safe_join(formatted_objects, ', ') : formatted_objects.join(', ')
+      object.map {|o| format_object(o, html)}.join(', ').html_safe
     when 'Time'
       format_time(object)
     when 'Date'
@@ -694,7 +693,7 @@ module ApplicationHelper
           title ||= identifier if page.blank?
         end
 
-        if link_project && link_project.wiki && User.current.allowed_to?(:view_wiki_pages, link_project)
+        if link_project && link_project.wiki
           # extract anchor
           anchor = nil
           if page =~ /^(.+?)\#(.+)$/
@@ -1278,16 +1277,7 @@ module ApplicationHelper
       elsif user.to_s =~ %r{<(.+?)>}
         email = $1
       end
-      if email.present?
-        gravatar(email.to_s.downcase, options) rescue nil
-      elsif user.is_a?(AnonymousUser)
-        options[:size] &&= options[:size].to_s
-        image_tag 'anonymous.png',
-                  GravatarHelper::DEFAULT_OPTIONS
-                    .except(:default, :rating, :ssl).merge(options)
-      else
-        nil
-      end
+      return gravatar(email.to_s.downcase, options) unless email.blank? rescue nil
     else
       ''
     end

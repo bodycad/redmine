@@ -236,6 +236,7 @@ class IssueQuery < Query
     end
 
     add_custom_fields_filters(issue_custom_fields)
+
     add_associations_custom_fields_filters :project, :author, :assigned_to, :fixed_version
 
     IssueRelation::TYPES.each do |relation_type, options|
@@ -254,7 +255,10 @@ class IssueQuery < Query
   def available_columns
     return @available_columns if @available_columns
     @available_columns = self.class.available_columns.dup
-    @available_columns += issue_custom_fields.visible.collect {|cf| QueryCustomFieldColumn.new(cf) }
+    @available_columns += (project ?
+                            project.all_issue_custom_fields :
+                            IssueCustomField
+                           ).visible.collect {|cf| QueryCustomFieldColumn.new(cf) }
 
     if User.current.allowed_to?(:view_time_entries, project, :global => true)
       index = @available_columns.find_index {|column| column.name == :total_estimated_hours}
@@ -417,26 +421,8 @@ class IssueQuery < Query
 
   def sql_for_watcher_id_field(field, operator, value)
     db_table = Watcher.table_name
-
-    me, others = value.partition { |id| ['0', User.current.id.to_s].include?(id) }
-    sql = if others.any?
-      "SELECT #{Issue.table_name}.id FROM #{Issue.table_name} " +
-      "INNER JOIN #{db_table} ON #{Issue.table_name}.id = #{db_table}.watchable_id AND #{db_table}.watchable_type = 'Issue' " +
-      "LEFT OUTER JOIN #{Project.table_name} ON #{Project.table_name}.id = #{Issue.table_name}.project_id " +
-      "WHERE (" +
-        sql_for_field(field, '=', me, db_table, 'user_id') +
-      ') OR (' +
-        Project.allowed_to_condition(User.current, :view_issue_watchers) +
-        ' AND ' +
-        sql_for_field(field, '=', others, db_table, 'user_id') +
-      ')'
-    else
-      "SELECT #{db_table}.watchable_id FROM #{db_table} " +
-      "WHERE #{db_table}.watchable_type='Issue' AND " +
-      sql_for_field(field, '=', me, db_table, 'user_id')
-    end
-
-    "#{Issue.table_name}.id #{ operator == '=' ? 'IN' : 'NOT IN' } (#{sql})"
+    "#{Issue.table_name}.id #{ operator == '=' ? 'IN' : 'NOT IN' } (SELECT #{db_table}.watchable_id FROM #{db_table} WHERE #{db_table}.watchable_type='Issue' AND " +
+      sql_for_field(field, '=', value, db_table, 'user_id') + ')'
   end
 
   def sql_for_member_of_group_field(field, operator, value)
@@ -568,7 +554,7 @@ class IssueQuery < Query
 
     if relation_options[:sym] == field && !options[:reverse]
       sqls = [sql, sql_for_relations(field, operator, value, :reverse => true)]
-      sql = sqls.join(["!", "!*", "!p", '!o'].include?(operator) ? " AND " : " OR ")
+      sql = sqls.join(["!", "!*", "!p"].include?(operator) ? " AND " : " OR ")
     end
     "(#{sql})"
   end

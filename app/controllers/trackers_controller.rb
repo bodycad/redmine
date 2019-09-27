@@ -102,6 +102,6 @@ class TrackersController < ApplicationController
       return
     end
     @trackers = Tracker.sorted.to_a
-    @custom_fields = IssueCustomField.sorted
+    @custom_fields = IssueCustomField.all.sort
   end
 end

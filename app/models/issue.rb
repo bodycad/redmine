@@ -72,7 +72,7 @@ class Issue < ActiveRecord::Base
   validates :estimated_hours, :numericality => {:greater_than_or_equal_to => 0, :allow_nil => true, :message => :invalid}
   validates :start_date, :date => true
   validates :due_date, :date => true
-  validate :validate_issue, :validate_required_fields, :validate_permissions
+  validate :validate_issue, :validate_required_fields
   attr_protected :id
 
   scope :visible, lambda {|*args|
@@ -103,12 +103,14 @@ class Issue < ActiveRecord::Base
     ids.any? ? where(:assigned_to_id => ids) : none
   }
 
-  before_validation :default_assign, on: :create
   before_validation :clear_disabled_fields
+  before_create :default_assign
   before_save :close_duplicates, :update_done_ratio_from_issue_status,
               :force_updated_on_change, :update_closed_on, :set_assigned_to_was
   after_save {|issue| issue.send :after_project_change if !issue.id_changed? && issue.project_id_changed?}
-  after_save :reschedule_following_issues, :update_nested_set_attributes,
+  # removed "reschedule_following_issues" call from the after_save event since it was setting start_date and end_date of following issues when the preceding one was being changed.
+  # L-D, 14/11/2016
+  after_save :update_nested_set_attributes,
              :update_parent_attributes, :create_journal
   # Should be after_create but would be called before previous after_save callbacks
   after_save :after_create_from_copy
@@ -424,7 +426,7 @@ class Issue < ActiveRecord::Base
   end
 
   def estimated_hours=(h)
-    write_attribute :estimated_hours, (h.is_a?(String) ? (h.to_hours || h) : h)
+    write_attribute :estimated_hours, (h.is_a?(String) ? h.to_hours : h)
   end
 
   safe_attributes 'project_id',
@@ -490,7 +492,6 @@ class Issue < ActiveRecord::Base
   # attr_accessible is too rough because we still want things like
   # Issue.new(:project => foo) to work
   def safe_attributes=(attrs, user=User.current)
-    @attributes_set_by = user
     return unless attrs.is_a?(Hash)
 
     attrs = attrs.deep_dup
@@ -664,11 +665,16 @@ class Issue < ActiveRecord::Base
   private :workflow_rule_by_attribute
 
   def done_ratio
-    if Issue.use_status_for_done_ratio? && status && status.default_done_ratio
-      status.default_done_ratio
-    else
-      read_attribute(:done_ratio)
-    end
+    ## The following lines have been commented so that the done_ratio is always what is
+    ## stored in the database. 'done_ratio' is always stored anyway, even when 'use_status_for_done_ratio'
+    ## is being used. This will allow us to compute children-dependent done_ratio even when
+    ## 'use_status_for_done_ratio' is used.
+
+    # if Issue.use_status_for_done_ratio? && status && status.default_done_ratio
+    #   status.default_done_ratio
+    # else
+        read_attribute(:done_ratio)
+    # end
   end
 
   def self.use_status_for_done_ratio?
@@ -746,14 +752,6 @@ class Issue < ActiveRecord::Base
     end
   end
 
-  def validate_permissions
-    if @attributes_set_by && new_record? && copy?
-      unless allowed_target_trackers(@attributes_set_by).include?(tracker)
-        errors.add :tracker, :invalid
-      end
-    end
-  end
-
   # Overrides Redmine::Acts::Customizable::InstanceMethods#validate_custom_field_values
   # so that custom values that are not editable are not validated (eg. a custom field that
   # is marked as required should not trigger a validation error if the user is not allowed
@@ -768,7 +766,10 @@ class Issue < ActiveRecord::Base
   # Set the done_ratio using the status if that setting is set.  This will keep the done_ratios
   # even if the user turns off the setting later
   def update_done_ratio_from_issue_status
-    if Issue.use_status_for_done_ratio? && status && status.default_done_ratio
+    ## Added a condition on 'leaf?' to make sure that this does not happen on issues that have children.
+    ## This way, we can compute children-dependent done_ratio values even when 'use_status_for_done_ratio'
+    ## is used. Maybe we should also rely on 'done_ratio_derived?'.
+    if leaf? && Issue.use_status_for_done_ratio? && status && status.default_done_ratio
       self.done_ratio = status.default_done_ratio
     end
   end
@@ -1012,7 +1013,7 @@ class Issue < ActiveRecord::Base
 
   # Returns the number of hours spent on this issue
   def spent_hours
-    @spent_hours ||= time_entries.sum(:hours) || 0.0
+    @spent_hours ||= time_entries.sum(:hours) || 0
   end
 
   # Returns the total number of hours spent on this issue and its descendants
@@ -1051,7 +1052,7 @@ class Issue < ActiveRecord::Base
     if issues.any?
       hours_by_issue_id = TimeEntry.visible(user).where(:issue_id => issues.map(&:id)).group(:issue_id).sum(:hours)
       issues.each do |issue|
-        issue.instance_variable_set "@spent_hours", (hours_by_issue_id[issue.id] || 0.0)
+        issue.instance_variable_set "@spent_hours", (hours_by_issue_id[issue.id] || 0)
       end
     end
   end
@@ -1064,7 +1065,7 @@ class Issue < ActiveRecord::Base
           " AND parent.lft <= #{Issue.table_name}.lft AND parent.rgt >= #{Issue.table_name}.rgt").
         where("parent.id IN (?)", issues.map(&:id)).group("parent.id").sum(:hours)
       issues.each do |issue|
-        issue.instance_variable_set "@total_spent_hours", (hours_by_issue_id[issue.id] || 0.0)
+        issue.instance_variable_set "@total_spent_hours", (hours_by_issue_id[issue.id] || 0)
       end
     end
   end
@@ -1088,15 +1089,6 @@ class Issue < ActiveRecord::Base
         issue.instance_variable_set "@relations", IssueRelation::Relations.new(issue, relations.sort)
       end
     end
-  end
-
-  # Returns a scope of the given issues and their descendants
-  def self.self_and_descendants(issues)
-    Issue.joins("JOIN #{Issue.table_name} ancestors" +
-        " ON ancestors.root_id = #{Issue.table_name}.root_id" +
-        " AND ancestors.lft <= #{Issue.table_name}.lft AND ancestors.rgt >= #{Issue.table_name}.rgt"
-      ).
-      where(:ancestors => {:id => issues.map(&:id)})
   end
 
   # Finds an issue relation given its id.
@@ -1186,16 +1178,13 @@ class Issue < ActiveRecord::Base
 
   # Reschedules the issue on the given date or the next working day and saves the record.
   # If the issue is a parent task, this is done by rescheduling its subtasks.
-  def reschedule_on!(date, journal=nil)
+  def reschedule_on!(date)
     return if date.nil?
     if leaf? || !dates_derived?
       if start_date.nil? || start_date != date
         if start_date && start_date > date
           # Issue can not be moved earlier than its soonest start date
           date = [soonest_start(true), date].compact.max
-        end
-        if journal
-          init_journal(journal.user)
         end
         reschedule_on(date)
         begin
@@ -1579,7 +1568,10 @@ class Issue < ActiveRecord::Base
 
       if p.done_ratio_derived?
         # done ratio = weighted average ratio of leaves
-        unless Issue.use_status_for_done_ratio? && p.status && p.status.default_done_ratio
+        ## Commented the following condition to have Redmine compute done_ratio values of parent
+        ## tasks even when 'use_status_for_done_ratio' is used. In order to work though, we need
+        ## the other changes done in the file.
+        # unless Issue.use_status_for_done_ratio? && p.status && p.status.default_done_ratio
           child_count = p.children.count
           if child_count > 0
             average = p.children.where("estimated_hours > 0").average(:estimated_hours).to_f
@@ -1592,7 +1584,7 @@ class Issue < ActiveRecord::Base
             progress = done / (average * child_count)
             p.done_ratio = progress.round
           end
-        end
+        # end
       end
 
       # ancestors will be recursively updated
@@ -1661,7 +1653,7 @@ class Issue < ActiveRecord::Base
   def reschedule_following_issues
     if start_date_changed? || due_date_changed?
       relations_from.each do |relation|
-        relation.set_issue_to_dates(@current_journal)
+        relation.set_issue_to_dates
       end
     end
   end

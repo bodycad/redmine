@@ -65,7 +65,7 @@ class MailHandler < ActionMailer::Base
     %w(project status tracker category priority assigned_to fixed_version).each do |option|
       options[:issue][option.to_sym] = env[option] if env[option]
     end
-    %w(allow_override unknown_user no_permission_check no_account_notice no_notification default_group project_from_subaddress).each do |option|
+    %w(allow_override unknown_user no_permission_check no_account_notice default_group project_from_subaddress).each do |option|
       options[option.to_sym] = env[option] if env[option]
     end
     if env['private']
@@ -250,8 +250,8 @@ class MailHandler < ActionMailer::Base
 
     # add To and Cc as watchers before saving so the watchers can reply to Redmine
     add_watchers(issue)
-    issue.save!
     add_attachments(issue)
+    issue.save!
     if logger
       logger.info "MailHandler: issue ##{issue.id} updated by #{user}"
     end
@@ -296,7 +296,6 @@ class MailHandler < ActionMailer::Base
     if email.attachments && email.attachments.any?
       email.attachments.each do |attachment|
         next unless accept_attachment?(attachment)
-        next unless attachment.body.decoded.size > 0
         obj.attachments << Attachment.create(:container => obj,
                           :file => attachment.body.decoded,
                           :filename => attachment.filename,
