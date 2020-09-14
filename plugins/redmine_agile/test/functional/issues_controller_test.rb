@@ -3,7 +3,7 @@
 # This file is a part of Redmin Agile (redmine_agile) plugin,
 # Agile board plugin for redmine
 #
-# Copyright (C) 2011-2019 RedmineUP
+# Copyright (C) 2011-2020 RedmineUP
 # http://www.redmineup.com/
 #
 # redmine_agile is free software: you can redistribute it and/or modify
@@ -53,30 +53,9 @@ class IssuesControllerTest < ActionController::TestCase
     EnabledModule.create(:project => @project_2, :name => 'agile')
     @request.session[:user_id] = 1
   end
-  def test_get_index_with_colors
-    with_agile_settings "color_on" => "issue" do
-      issue = Issue.find(1)
-      issue.color = AgileColor::AGILE_COLORS[:red]
-      issue.save
-      compatible_request :get, :index
-      assert_response :success
-      assert_select 'tr#issue-1.issue.bk-red', 1
-    end
-  end
-
-  def test_post_issue_journal_color
-    with_agile_settings 'color_on' => 'issue' do
-      compatible_request :put, :update, :id => 1, :issue => { :agile_color_attributes => { :color => AgileColor::AGILE_COLORS[:red] } }
-      issue = Issue.find(1)
-      details = issue.journals.order(:id).last.details.last
-      assert issue.color
-      assert_equal 'color', details.prop_key
-      assert_equal AgileColor::AGILE_COLORS[:red], details.value
-    end
-  end
 
   def test_new_issue_with_sp_value
-    with_agile_settings 'estimate_units' => 'story_points' do
+    with_agile_settings 'estimate_units' => 'story_points', 'story_points_on' => '1' do
       compatible_request :get, :new, :project_id => 1
       assert_response :success
       assert_select 'input#issue_agile_data_attributes_story_points'
@@ -92,7 +71,7 @@ class IssuesControllerTest < ActionController::TestCase
   end
 
   def test_create_issue_with_sp_value
-    with_agile_settings 'estimate_units' => 'story_points' do
+    with_agile_settings 'estimate_units' => 'story_points', 'story_points_on' => '1' do
       assert_difference 'Issue.count' do
         compatible_request :post, :create, :project_id => 1, :issue => {
           :subject => 'issue with sp',
@@ -109,7 +88,7 @@ class IssuesControllerTest < ActionController::TestCase
   end
 
   def test_post_issue_journal_story_points
-    with_agile_settings 'estimate_units' => 'story_points' do
+    with_agile_settings 'estimate_units' => 'story_points', 'story_points_on' => '1' do
       compatible_request :put, :update, :id => 1, :issue => { :agile_data_attributes => { :story_points => 100 } }
       issue = Issue.find(1)
       assert_equal 100, issue.story_points
@@ -120,10 +99,10 @@ class IssuesControllerTest < ActionController::TestCase
   end
 
   def test_show_issue_with_story_points
-    with_agile_settings 'estimate_units' => 'story_points' do
+    with_agile_settings 'estimate_units' => 'story_points', 'story_points_on' => '1' do
       compatible_request :get, :show, :id => 1
       assert_response :success
-      assert_select '.attributes', :text => /Story points/, :count => 1
+      assert_select '#issue-form .attributes', :text => /Story points/, :count => 1
     end
   end
 
@@ -135,29 +114,12 @@ class IssuesControllerTest < ActionController::TestCase
                               :totalable_names => [],
                               :sort => [['story_points', 'asc'], ['id', 'desc']]
                             }
-    with_agile_settings 'estimate_units' => 'story_points' do
+    with_agile_settings 'estimate_units' => 'story_points', 'story_points_on' => '1' do
       compatible_request :get, :show, :id => 1
       assert_response :success
-      assert_select '.attributes', :text => /Story points/, :count => 1
+      assert_select '#issue-form .attributes', :text => /Story points/, :count => 1
     end
   ensure
     session[:issue_query] = {}
-  end
-  def test_show_issue_form_with_story_points_select
-    with_agile_settings('sp_values' => [1,2,3],
-      'estimate_units' => 'story_points') do
-        compatible_request :get, :new, :project_id => 1
-        assert_response :success
-        assert_select 'select#issue_agile_data_attributes_story_points'
-    end
-  end
-
-  def test_dont_show_story_points_select_when_no_sp_values
-    with_agile_settings('sp_values' => [],
-      'estimate_units' => 'story_points') do
-        compatible_request :get, :new, :project_id => 1
-        assert_response :success
-        assert_select 'select#issue_agile_data_attributes_story_points', :count => 0
-    end
   end
 end

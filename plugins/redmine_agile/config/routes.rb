@@ -1,7 +1,7 @@
 # This file is a part of Redmin Agile (redmine_agile) plugin,
 # Agile board plugin for redmine
 #
-# Copyright (C) 2011-2019 RedmineUP
+# Copyright (C) 2011-2020 RedmineUP
 # http://www.redmineup.com/
 #
 # redmine_agile is free software: you can redistribute it and/or modify
@@ -22,26 +22,18 @@
 
 resources :projects do
   resources :agile_queries, only: [:new, :create]
-  resources :agile_charts_queries, only: [:new, :create]
-  resources :agile_version_queries, only: [:new, :create, :edit, :update, :destroy]
-  resources :agile_versions, only: [:index] do
-    collection do
-      get 'load_more'
-      get 'autocomplete'
-    end
-  end
 end
 
 resources :issues do
   get "done_ratio", :to => "agile_journal_details#done_ratio"
   get "status", :to => "agile_journal_details#status"
   get "assignee", :to => "agile_journal_details#assignee"
+  member do
+    get "agile_data", :to => "agile_boards#agile_data"
+  end
 end
 
 resources :agile_queries
-resources :agile_charts_queries, except: [:index, :show]
-get '/agile_colors/:object_type', :to => "agile_colors#index", :as => "agile_colors"
-put '/agile_colors/:object_type', :to => "agile_colors#update", :as => "update_agile_colors"
 
 get '/projects/:project_id/agile/charts', :to => "agile_charts#show", :as => "project_agile_charts"
 get '/agile/charts/', :to => "agile_charts#show", :as => "agile_charts"

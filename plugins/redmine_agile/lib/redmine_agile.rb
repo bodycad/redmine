@@ -1,7 +1,7 @@
 # This file is a part of Redmin Agile (redmine_agile) plugin,
 # Agile board plugin for redmine
 #
-# Copyright (C) 2011-2019 RedmineUP
+# Copyright (C) 2011-2020 RedmineUP
 # http://www.redmineup.com/
 #
 # redmine_agile is free software: you can redistribute it and/or modify
@@ -18,13 +18,11 @@
 # along with redmine_agile.  If not, see <http://www.gnu.org/licenses/>.
 
 
-require 'acts_as_colored/init'
 
 require 'redmine_agile/hooks/views_layouts_hook'
 require 'redmine_agile/hooks/views_issues_hook'
 require 'redmine_agile/hooks/views_versions_hook'
 require 'redmine_agile/hooks/controller_issue_hook'
-require 'redmine_agile/hooks/helper_issues_hook'
 require 'redmine_agile/patches/issue_patch'
 
 require 'redmine_agile/helpers/agile_helper'
@@ -32,27 +30,8 @@ require 'redmine_agile/helpers/agile_helper'
 require 'redmine_agile/charts/agile_chart'
 require 'redmine_agile/charts/burndown_chart'
 require 'redmine_agile/charts/work_burndown_chart'
-require 'redmine_agile/charts/velocity_chart'
-require 'redmine_agile/charts/cumulative_flow_chart'
-require 'redmine_agile/charts/trackers_cumulative_flow_chart'
-require 'redmine_agile/charts/burnup_chart'
-require 'redmine_agile/charts/work_burnup_chart'
-require 'redmine_agile/charts/lead_time_chart'
-require 'redmine_agile/charts/average_lead_time_chart'
-
-require 'redmine_agile/patches/issue_priority_patch'
-require 'redmine_agile/patches/issue_query_patch'
-require 'redmine_agile/patches/tracker_patch'
-require 'redmine_agile/patches/project_patch'
-require 'redmine_agile/hooks/views_context_menus_hook'
-require 'redmine_agile/hooks/views_projects_form_hook'
-
-require 'redmine_agile/utils/header_tree'
-
-require 'redmine_agile/patches/user_patch'
-require 'redmine_agile/hooks/views_users_form_hook'
-require 'redmine_agile/patches/queries_controller_patch' if Redmine::VERSION.to_s >= '3.4'
 require 'redmine_agile/charts/charts'
+require 'redmine_agile/patches/issue_drop_patch'
 
 module RedmineAgile
 
@@ -63,7 +42,6 @@ module RedmineAgile
   ESTIMATE_HOURS        = 'hours'.freeze
   ESTIMATE_STORY_POINTS = 'story_points'.freeze
   ESTIMATE_UNITS        = [ESTIMATE_HOURS, ESTIMATE_STORY_POINTS].freeze
-  COLOR_BASE = ['issue', 'tracker', 'priority', 'spent_time', 'user', 'project']
 
   class << self
     def time_reports_items_limit
@@ -94,7 +72,11 @@ module RedmineAgile
     end
 
     def use_story_points?
-      estimate_units == 'story_points'
+      if Setting.plugin_redmine_agile.key?('story_points_on')
+        Setting.plugin_redmine_agile['story_points_on'] == '1'
+      else
+        estimate_units == ESTIMATE_STORY_POINTS
+      end
     end
 
     def trackers_for_sp
@@ -102,18 +84,18 @@ module RedmineAgile
     end
 
     def use_story_points_for?(tracker)
-      return true if trackers_for_sp.blank?
+      return true if trackers_for_sp.blank? && use_story_points?
       tracker = tracker.is_a?(Tracker) ? tracker.id.to_s : tracker
-      trackers_for_sp == tracker
+      trackers_for_sp == tracker && use_story_points?
     end
 
     def use_colors?
-      COLOR_BASE.include?(color_base)
-                end
+      false
+          end
 
     def color_base
-      Setting.plugin_redmine_agile['color_on'] || 'none'
-                end
+      "none"
+          end
 
     def minimize_closed?
       Setting.plugin_redmine_agile['minimize_closed'].to_i > 0
@@ -126,19 +108,10 @@ module RedmineAgile
     def auto_assign_on_move?
       Setting.plugin_redmine_agile['auto_assign_on_move'].to_i > 0
     end
-    def color_prefix
-      'bk'
-    end
-
-    COLOR_BASE.each do |cb|
-      define_method :"#{cb}_colors?" do
-        color_base == cb
-      end
-    end
 
     def status_colors?
-      Setting.plugin_redmine_agile['status_colors'].to_i > 0
-                end
+      false
+          end
 
     def hide_closed_issues_data?
       Setting.plugin_redmine_agile['hide_closed_issues_data'].to_i > 0
@@ -149,14 +122,11 @@ module RedmineAgile
     end
 
     def allow_create_card?
-      Setting.plugin_redmine_agile['allow_create_card'].to_i > 0
-          end
+      false
+    end
 
     def allow_inline_comments?
       Setting.plugin_redmine_agile['allow_inline_comments'].to_i > 0
-    end
-    def sp_values
-      Setting.plugin_redmine_agile['sp_values'].to_s.split(',').map{|x| x.strip.to_i}.uniq.delete_if{|x| x == 0}
     end
   end
 
