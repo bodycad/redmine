@@ -27,6 +27,7 @@ gem "sprockets", "~> 3.7.2"
 gem "nokogiri", (RUBY_VERSION >= "2.1" ? "~> 1.7.2" : "~> 1.6.8")
 gem "i18n", "~> 0.7.0"
 gem "ffi", "1.9.14", :platforms => :mingw if RUBY_VERSION < "2.0"
+gem "mysql2", "~> 0.4.6"
 
 # Request at least rails-html-sanitizer 1.0.3 because of security advisories 
 gem "rails-html-sanitizer", ">= 1.0.3"
